@@ -1,0 +1,10 @@
+
+TODO
+====
+
+ * copy the user login/logout scripts from working-on-this
+ * add home page
+ * add boook list
+ * add "add book" form
+ * add vote up/down button on book list
+ * refactor using mongoengiine?
