@@ -298,7 +298,7 @@ class Router(object):
         return r'-?[\d.]+', float, lambda x: str(float(x))
 
     def path_filter(self, conf):
-        return r'.*?', None, None
+        return r'.+?', None, None
 
     def add_filter(self, name, func):
         ''' Add a filter. The provided function is called with the configuration
@@ -526,24 +526,36 @@ class Route(object):
 
 class Bottle(object):
     """ Each Bottle object represents a single, distinct web application and
-        consists of routes, callbacks, plugins and configuration. Instances are
-        callable WSGI applications. """
+        consists of routes, callbacks, plugins, resources and configuration.
+        Instances are callable WSGI applications.
 
-    def __init__(self, catchall=True, autojson=True, config=None):
+        :param catchall: If true (default), handle all exceptions. Turn off to
+                         let debugging middleware handle exceptions.
+    """
+
+    def __init__(self, catchall=True, autojson=True):
+        #: If true, most exceptions are caught and returned as :exc:`HTTPError`
+        self.catchall = catchall
+
+        #: A :cls:`ResourceManager` for application files
+        self.resources = ResourceManager()
+
+        #: A :cls:`ConfigDict` for app specific configuration.
+        self.config = ConfigDict()
+        self.config.autojson = autojson
+
         self.routes = [] # List of installed :class:`Route` instances.
         self.router = Router() # Maps requests to :class:`Route` instances.
-        self.plugins = [] # List of installed plugins.
-
         self.error_handler = {}
-        self.config = ConfigDict(config or {})
-        #: If true, most exceptions are catched and returned as :exc:`HTTPError`
-        self.catchall = catchall
-        #: An instance of :class:`HooksPlugin`. Empty by default.
+
+        # Core plugins
+        self.plugins = [] # List of installed plugins.
         self.hooks = HooksPlugin()
         self.install(self.hooks)
-        if autojson:
+        if self.config.autojson:
             self.install(JSONPlugin())
         self.install(TemplatePlugin())
+
 
     def mount(self, prefix, app, **options):
         ''' Mount an application (:class:`Bottle` or plain WSGI) to a specific
@@ -585,7 +597,7 @@ class Bottle(object):
             self.route('/' + '/'.join(parts), callback=mountpoint, **options)
 
     def merge(self, routes):
-        ''' Merge the routes of another :cls:`Bottle` application or a list of
+        ''' Merge the routes of another :class:`Bottle` application or a list of
             :class:`Route` objects into this application. The routes keep their
             'owner', meaning that the :data:`Route.app` attribute is not
             changed. '''
@@ -742,8 +754,8 @@ class Bottle(object):
 
     def handle(self, path, method='GET'):
         """ (deprecated) Execute the first matching route callback and return
-            the result. :exc:`HTTPResponse` exceptions are catched and returned.
-            If :attr:`Bottle.catchall` is true, other exceptions are catched as
+            the result. :exc:`HTTPResponse` exceptions are caught and returned.
+            If :attr:`Bottle.catchall` is true, other exceptions are caught as
             well and returned as :exc:`HTTPError` instances (500).
         """
         depr("This method will change semantics in 0.10. Try to avoid it.")
@@ -885,24 +897,31 @@ class Bottle(object):
 
 class BaseRequest(object):
     """ A wrapper for WSGI environment dictionaries that adds a lot of
-        convenient access methods and properties. Most of them are read-only."""
+        convenient access methods and properties. Most of them are read-only.
+
+        Adding new attributes to a request actually adds them to the environ
+        dictionary (as 'bottle.request.ext.<name>'). This is the recommended
+        way to store and access request-specific data.
+    """
+
+    __slots__ = ('environ')
 
     #: Maximum size of memory buffer for :attr:`body` in bytes.
     MEMFILE_MAX = 102400
     #: Maximum number pr GET or POST parameters per request
     MAX_PARAMS  = 100
 
-    def __init__(self, environ):
+    def __init__(self, environ=None):
         """ Wrap a WSGI environ dictionary. """
         #: The wrapped WSGI environ dictionary. This is the only real attribute.
         #: All other attributes actually are read-only properties.
-        self.environ = environ
-        environ['bottle.request'] = self
+        self.environ = {} if environ is None else environ
+        self.environ['bottle.request'] = self
 
     @DictProperty('environ', 'bottle.app', read_only=True)
     def app(self):
         ''' Bottle application handling this request. '''
-        raise AttributeError('This request is not connected to an application.')
+        raise RuntimeError('This request is not connected to an application.')
 
     @property
     def path(self):
@@ -1205,6 +1224,21 @@ class BaseRequest(object):
     def __repr__(self):
         return '<%s: %s %s>' % (self.__class__.__name__, self.method, self.url)
 
+    def __getattr__(self, name):
+        ''' Search in self.environ for additional user defined attributes. '''
+        try:
+            var = self.environ['bottle.request.ext.%s'%name]
+            return var.__get__(self) if hasattr(var, '__get__') else var
+        except KeyError:
+            raise AttributeError('Attribute %r not defined.' % name)       
+
+    def __setattr__(self, name, value):
+        if name == 'environ': return object.__setattr__(self, name, value)
+        self.environ['bottle.request.ext.%s'%name] = value
+
+
+
+
 def _hkey(s):
     return s.title().replace('_','-')
 
@@ -1450,14 +1484,11 @@ class BaseResponse(object):
 #: attributes.
 _lctx = threading.local()
 
-def local_property(name, doc=None):
-
-    return property(
-        lambda self: getattr(_lctx, name),
-        lambda self, value: setattr(_lctx, name, value),
-        lambda self: delattr(_lctx, name),
-        doc or ('Thread-local property stored in :data:`_lctx.%s` ' % name)
-    )
+def local_property(name):
+    return property(lambda self: getattr(_lctx, name),
+                    lambda self, value: setattr(_lctx, name, value),
+                    lambda self: delattr(_lctx, name),
+                    'Thread-local property stored in :data:`_lctx.%s`' % name)
 
 class LocalRequest(BaseRequest):
     ''' A thread-local subclass of :class:`BaseRequest` with a different
@@ -1465,7 +1496,6 @@ class LocalRequest(BaseRequest):
         instance of this class (:data:`request`). If accessed during a
         request/response cycle, this instance always refers to the *current*
         request (even on a multithreaded server). '''
-    def __init__(self): pass
     bind = BaseRequest.__init__
     environ = local_property('request_environ')
 
@@ -1476,7 +1506,6 @@ class LocalResponse(BaseResponse):
         instance of this class (:data:`response`). Its attributes are used
         to build the HTTP response at the end of the request/response cycle.
     '''
-    def __init__(self): pass
     bind = BaseResponse.__init__
     _status_line = local_property('response_status_line')
     _status_code = local_property('response_status_code')
@@ -1875,6 +1904,92 @@ class WSGIFileWrapper(object):
             yield part
 
 
+class ResourceManager(object):
+    ''' This class manages a list of search paths and helps to find and open
+        aplication-bound resources (files).
+
+        :param base: default value for same-named :meth:`add_path` parameter.
+        :param opener: callable used to open resources.
+        :param cachemode: controls which lookups are cached. One of 'all',
+                         'found' or 'none'.
+    '''
+
+    def __init__(self, base='./', opener=open, cachemode='all'):
+        self.opener = open
+        self.base = base
+        self.cachemode = cachemode
+
+        #: A list of search paths. See :meth:`add_path` for details.
+        self.path = []
+        #: A cache for resolved paths. `res.cache.clear()`` clears the cache.
+        self.cache = {}
+
+    def add_path(self, path, base=None, index=None, create=False):
+        ''' Add a new path to the list of search paths. Return False if it does
+            not exist.
+
+            :param path: The new search path. Relative paths are turned into an
+                absolute and normalized form. If the path looks like a file (not
+                ending in `/`), the filename is stripped off.
+            :param base: Path used to absolutize relative search paths.
+                Defaults to `:attr:base` which defaults to ``./``.
+            :param index: Position within the list of search paths. Defaults to
+                last index (appends to the list).
+            :param create: Create non-existent search paths. Off by default.
+
+            The `base` parameter makes it easy to reference files installed
+            along with a python module or package::
+            
+                res.add_path('./resources/', __file__)
+        '''
+        base = os.path.abspath(os.path.dirname(base or self.base))
+        path = os.path.abspath(os.path.join(base, os.path.dirname(path)))
+        path += os.sep
+        if path in self.path:
+            self.path.remove(path)
+        if create and not os.path.isdir(path):
+            os.mkdirs(path)
+        if index is None:
+            self.path.append(path)
+        else:
+            self.path.insert(index, path)
+        self.cache.clear()
+
+    def __iter__(self):
+        ''' Iterate over all existing files in all registered paths. '''
+        search = self.path[:]
+        while search:
+            path = search.pop()
+            if not os.path.isdir(path): continue
+            for name in os.listdir(path):
+                full = os.path.join(path, name)
+                if os.path.isdir(full): search.append(full)
+                else: yield full
+
+    def lookup(self, name):
+        ''' Search for a resource and return an absolute file path, or `None`.
+
+            The :attr:`path` list is searched in order. The first match is
+            returend. Symlinks are followed. The result is cached to speed up
+            future lookups. '''
+        if name not in self.cache or DEBUG:
+            for path in self.path:
+                fpath = os.path.join(path, name)
+                if os.path.isfile(fpath):
+                    if self.cachemode in ('all', 'found'):
+                        self.cache[name] = fpath
+                    return fpath
+            if self.cachemode == 'all':
+                self.cache[name] = None
+        return self.cache[name]
+
+    def open(self, name, mode='r', *args, **kwargs):
+        ''' Find a resource and return a file object, or raise IOError. '''
+        fname = self.lookup(name)
+        if not fname: raise IOError("Resource %r not found." % name)
+        return self.opener(name, mode=mode, *args, **kwargs)
+
+
 
 
 
@@ -2230,6 +2345,12 @@ class CherryPyServer(ServerAdapter):
             server.stop()
 
 
+class WaitressServer(ServerAdapter):
+    def run(self, handler):
+        from waitress import serve
+        serve(handler, host=self.host, port=self.port)
+
+
 class PasteServer(ServerAdapter):
     def run(self, handler): # pragma: no cover
         from paste import httpserver
@@ -2326,7 +2447,8 @@ class GeventServer(ServerAdapter):
         if self.options.get('monkey', True):
             if not threading.local is local.local: monkey.patch_all()
         wsgi = wsgi_fast if self.options.get('fast') else pywsgi
-        wsgi.WSGIServer((self.host, self.port), handler).serve_forever()
+        log = None if self.quiet else 'default'
+        wsgi.WSGIServer((self.host, self.port), handler, log=log).serve_forever()
 
 
 class GunicornServer(ServerAdapter):
@@ -2376,7 +2498,7 @@ class BjoernServer(ServerAdapter):
 
 class AutoServer(ServerAdapter):
     """ Untested. """
-    adapters = [PasteServer, TwistedServer, CherryPyServer, WSGIRefServer]
+    adapters = [WaitressServer, PasteServer, TwistedServer, CherryPyServer, WSGIRefServer]
     def run(self, handler):
         for sa in self.adapters:
             try:
@@ -2388,6 +2510,7 @@ server_names = {
     'cgi': CGIServer,
     'flup': FlupFCGIServer,
     'wsgiref': WSGIRefServer,
+    'waitress': WaitressServer,
     'cherrypy': CherryPyServer,
     'paste': PasteServer,
     'fapws3': FapwsServer,
@@ -2833,11 +2956,10 @@ class SimpleTemplate(BaseTemplate):
 
         for line in template.splitlines(True):
             lineno += 1
-            line = line if isinstance(line, unicode)\
-                        else unicode(line, encoding=self.encoding)
+            line = touni(line, self.encoding)
             sline = line.lstrip()
             if lineno <= 2:
-                m = re.search(r"%.*coding[:=]\s*([-\w\.]+)", line)
+                m = re.match(r"%\s*#.*coding[:=]\s*([-\w.]+)", sline)
                 if m: self.encoding = m.group(1)
                 if m: line = line.replace('coding','coding (removed)')
             if sline and sline[0] == '%' and sline[:2] != '%%':
@@ -2993,9 +3115,9 @@ _HTTP_STATUS_LINES = dict((k, '%d %s'%(k,v)) for (k,v) in HTTP_CODES.items())
 
 #: The default template used for error pages. Override with @error()
 ERROR_PAGE_TEMPLATE = """
-%try:
-    %from bottle import DEBUG, HTTP_CODES, request, touni
-    %status_name = HTTP_CODES.get(e.status, 'Unknown').title()
+%%try:
+    %%from %s import DEBUG, HTTP_CODES, request, touni
+    %%status_name = HTTP_CODES.get(e.status, 'Unknown').title()
     <!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
     <html>
         <head>
@@ -3012,21 +3134,21 @@ ERROR_PAGE_TEMPLATE = """
             <p>Sorry, the requested URL <tt>{{repr(request.url)}}</tt>
                caused an error:</p>
             <pre>{{e.output}}</pre>
-            %if DEBUG and e.exception:
+            %%if DEBUG and e.exception:
               <h2>Exception:</h2>
               <pre>{{repr(e.exception)}}</pre>
-            %end
-            %if DEBUG and e.traceback:
+            %%end
+            %%if DEBUG and e.traceback:
               <h2>Traceback:</h2>
               <pre>{{e.traceback}}</pre>
-            %end
+            %%end
         </body>
     </html>
-%except ImportError:
+%%except ImportError:
     <b>ImportError:</b> Could not generate the error page. Please add bottle to
     the import path.
-%end
-"""
+%%end
+""" % __name__
 
 #: A thread-safe instance of :class:`LocalRequest`. If accessed from within a 
 #: request callback, this instance always refers to the *current* request

@@ -7,11 +7,10 @@ import copy
 try:
     import markupsafe
     escape = markupsafe.escape
-    literal = markupsafe.Markup
-
 except ImportError:
     escape = lambda x: cgi.escape(unicode(x))
-    literal = unicode
+
+literal = unicode
 
 
 class Modifiers(dict):
@@ -97,7 +96,11 @@ class Template(object):
             # Falsey and Negated or Truthy and Not Negated
             elif (not it and section[2] == '^') or (it and section[2] != '^'):
                 replacer = self._render_dictionary(inner, it)
+<<<<<<< HEAD
 
+=======
+            
+>>>>>>> Initial commit of cleaned-up base site
             template = literal(template.replace(section, replacer))
 
         return template

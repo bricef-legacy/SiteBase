@@ -1,79 +1,87 @@
-
+#!/usr/bin/env python
 
 import sys
-sys.path.append("./modules/")
-
 import os
-import ConfigParser
-from functools import *
+mypath = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0,mypath)
+sys.path.insert(0,os.path.join(mypath, "modules"))
+os.chdir(mypath)import os
 
-import pystache
+# Standard lib modules
+import argparse
+
+# Third party modules
 import bottle
+from bottle import route, run, request, response, get, post, redirect, abort, static_file, error, mount
 
-from bottle import route, run, request, response, get, post, redirect, abort, static_file, error
+# My modules
+from sitetools import *
+from config import config
 
+
+
+#########################
 #
 # Configuration
 #
-config = ConfigParser.SafeConfigParser()
-config.read("config.ini")
+#########################
 
 bottle.debug(True)
 
-def renderfile(name, data=None):
-  #This would be more readable in lisp...Coulda shoulda woulda
-  fnames = filter(
-                os.path.isfile,
-                map(
-                  partial(os.path.join, config.get("app", "templatepath")),
-                  ["%s.mustache"%name, "%s.html"%name, name]))
-  for name in fnames:
-    return pystache.render(open(name, "r").read(), data, path=config.get("app", "templatepath"))
-
-
-
-
-def show_flowDiagram():
-  return "<h3>flow diagram placeholder</h3>"
-
-
-
-pages = {
-  "overview" : {
-    "name" : "Overview", 
-    "href" : "/overview",
-    "template" : "overview", 
-    "tabs" : [
-      { "name" : "Flow Diagram",
-        "content" : show_flowDiagram }
-    ]
-  },
-}
-
-def genpage(name):
-  if name in pages:
-    return renderfile(pages[name]["template"])
-  else:
-    abort(404, "This page does not exist")
-
+###############################
+#
+# Route Handlers 
+#
+###############################
 
 @route("/")
-@route("/home")
 def home():
-  return renderfile("home")
+  return renderfile("root", {})
 
-@route("/<name>")
-def home(name):
-  return genpage(name) 
 
+@route("/fail/<report>/<graph>")
+def show_fragment(report, graph):
+  abort(404, "This page does not exist") 
 
 @route("/static/<filepath:path>")
 def static(filepath):
   return static_file(filepath, root="./static/")
 
 
+###############################
+#
+# Mount API on /api/ 
+#
+###############################
+from jsonapi import app as api_app
+mount("/api/", api_app)
+
+
+###############################
+#
+# Handle Errors 
+#
+###############################
 @error(404)
 def error404(error):
   return renderfile("404")
 
-run(host="0.0.0.0", port="8009", debug=True, reloader=True)
+
+#
+# Main. To run in developer mode simply pass --run
+# 
+if __name__ == "__main__":
+  parser = argparse.ArgumentParser(description='Run appliation')
+  parser.add_argument(
+    "--run",
+    action='store_true',
+    help='Run the webapp in developer mode'
+  )
+  args = parser.parse_args()
+
+  if args.run:
+    run(host="0.0.0.0", port="8009", debug=True, reloader=True)
+
+else:
+  application = bottle.default_app()
+
