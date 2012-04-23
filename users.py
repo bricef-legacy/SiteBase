@@ -9,8 +9,13 @@ SECRET = config.get("app", "secret")
 
 logger = logging.getLogger(__name__)
 
+class UserNameExistsException(Exception):
+  pass
 
 def add_user(username, pwd, perms=[]):
+  existing = db.users.find_one({"name":name})
+  if existing:
+    raise UserNameExistsException() 
   users.insert({"name":username, "password":pwd, "perms":perms})
 
 def del_user(username):
@@ -28,6 +33,14 @@ def add_perm(username, perm):
 
 def del_perm(username, perm):
   user.update({"name":username}, {"$pull": {"perms":perm}})
+
+def auth_ok(name, password):
+  if name:
+    user = db.users.find_one({"name":name})
+  if user:
+    return user["password"] == password
+  else:
+    return False
 
 def CheckPermission(perm, noauth="noauth"):
   def decorator(function):

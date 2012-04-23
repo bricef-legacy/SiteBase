@@ -2,14 +2,11 @@ import time
 import os
 import copy
 import logging
-from config import config
+from config import CACHE, SECRET, TEMPLATEPATH
 from functools import *
 import pystache
 
-CACHE = config.getboolean("app", "cache")
-TEMPLATEPATH = config.get("app", "templatepath")
-SECRET = config.get("app", "secret")
-
+logger = logging.getLogger(__name__)
 
 def renderfile(name, data={}):
   fnames = filter(
@@ -19,7 +16,7 @@ def renderfile(name, data={}):
       [
         "%s.mustache"%name, 
         "%s.html"%name, 
-        name, 
+        str(name), 
         "default.mustache", 
         "default.html",
         "default"
@@ -33,14 +30,14 @@ def timeMe(fun):
   def timed(*args, **kwargs):
     start = time.time()    
     spill = fun(*args, **kwargs)
-    note("%s() took %f seconds to execute"%(fun.__name__, time.time()-start))
+    logger.info("%s() took %f seconds to execute"%(fun.__name__, time.time()-start))
     return spill
   return timed
 
 def showMe(fun):
   def showed(*args, **kwargs):
     spill = fun(*args, **kwargs)
-    note("%s() returned %s"%(fun.__name__, str(spill)))
+    logger.info("%s() returned %s"%(fun.__name__, str(spill)))
     return spill
   return showed
 
