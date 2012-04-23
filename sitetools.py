@@ -6,6 +6,7 @@ from config import CACHE, SECRET, TEMPLATEPATH
 from functools import *
 import pystache
 
+logger = logging.getLogger(__name__)
 
 def renderfile(name, data={}):
   fnames = filter(
@@ -29,14 +30,14 @@ def timeMe(fun):
   def timed(*args, **kwargs):
     start = time.time()    
     spill = fun(*args, **kwargs)
-    note("%s() took %f seconds to execute"%(fun.__name__, time.time()-start))
+    logger.info("%s() took %f seconds to execute"%(fun.__name__, time.time()-start))
     return spill
   return timed
 
 def showMe(fun):
   def showed(*args, **kwargs):
     spill = fun(*args, **kwargs)
-    note("%s() returned %s"%(fun.__name__, str(spill)))
+    logger.info("%s() returned %s"%(fun.__name__, str(spill)))
     return spill
   return showed
 
