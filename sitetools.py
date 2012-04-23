@@ -19,7 +19,7 @@ def renderfile(name, data={}):
       [
         "%s.mustache"%name, 
         "%s.html"%name, 
-        name, 
+        str(name), 
         "default.mustache", 
         "default.html",
         "default"

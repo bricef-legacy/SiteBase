@@ -38,7 +38,7 @@ bottle.debug(True)
 @route("/")
 @route("/home")
 def home():
-  return renderfile("root", {})
+  return renderfile("home", {})
 
 @app.route("/register")
 @app.get("/register")
