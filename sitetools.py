@@ -2,13 +2,9 @@ import time
 import os
 import copy
 import logging
-from config import config
+from config import CACHE, SECRET, TEMPLATEPATH
 from functools import *
 import pystache
-
-CACHE = config.getboolean("app", "cache")
-TEMPLATEPATH = config.get("app", "templatepath")
-SECRET = config.get("app", "secret")
 
 
 def renderfile(name, data={}):
