@@ -1,8 +1,10 @@
 
+try:
+  import configparser 
+except ImportError:
+  import ConfigParser as configparser
 
-import ConfigParser
-
-config = ConfigParser.SafeConfigParser({
+config = configparser.SafeConfigParser({
   "debug":"False", 
   "templatepath":"./templates/",
   "cache":"False"})

@@ -35,6 +35,7 @@ def del_perm(username, perm):
   user.update({"name":username}, {"$pull": {"perms":perm}})
 
 def auth_ok(name, password):
+  user = None
   if name:
     user = db.users.find_one({"name":name})
   if user:

@@ -5,7 +5,7 @@ import os
 mypath = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0,mypath)
 sys.path.insert(0,os.path.join(mypath, "modules"))
-os.chdir(mypath)import os
+os.chdir(mypath)
 
 # Standard lib modules
 import argparse
@@ -40,9 +40,9 @@ bottle.debug(True)
 def home():
   return renderfile("home", {})
 
-@app.route("/register")
-@app.get("/register")
-@app.post("/register")
+@route("/register")
+@get("/register")
+@post("/register")
 def register():
   username = request.forms.get("username")
   password = request.forms.get("password")
