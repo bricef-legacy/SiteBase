@@ -117,7 +117,7 @@ def error404(error):
 # Main. To run in developer mode simply pass --run
 # 
 if __name__ == "__main__":
-  parser = argparse.ArgumentParser(description='Run appliation')
+  parser = argparse.ArgumentParser(description='Run application')
   parser.add_argument(
     "--run",
     action='store_true',
